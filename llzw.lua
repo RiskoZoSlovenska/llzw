@@ -1,5 +1,6 @@
 local bit32 = bit32 or require("bit32")
 
+local INITIAL_DICT_SIZE = 256
 local ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 local PADDING = "="
 local PADDING_BYTE = string.byte(PADDING)
@@ -15,25 +16,6 @@ for i = 1, 64 do
 	lookupB64Code[string.byte(c)] = i - 1
 end
 
--- Initial dictionary
-local initialDictionarySize = 256
-local initialDictionary = {}
-
-for i = 0, initialDictionarySize - 1 do
-	local char = string.char(i)
-	initialDictionary[char] = i
-	initialDictionary[i] = char
-end
-
-
-local function table_copy(tbl)
-	local out = {}
-	for k, v in pairs(tbl) do
-		out[k] = v
-	end
-	return out
-end
-
 
 --[[
 	Compress and base64-encode the given string of arbitrary binary data. The
@@ -45,10 +27,15 @@ local function compress(data)
 		return ""
 	end
 
-	local dictionary = table_copy(initialDictionary)
-	local nextEntry = initialDictionarySize
+	local trieCodes = {}
+	local trieNexts = {}
+	for i = 0, INITIAL_DICT_SIZE - 1 do
+		trieCodes[i] = i
+		trieNexts[i] = {}
+	end
+	local nextEntry = INITIAL_DICT_SIZE
 
-	local key = "" -- Input buffer of sorts
+	local key = nil -- The code corresponding to the current input slice that's being processed
 
 	local curWidth = math.floor(math.log(nextEntry, 2)) + 1
 	local nextWidthChangeAt = 2^curWidth
@@ -57,19 +44,23 @@ local function compress(data)
 	local outArr, outArrNext = {}, 1
 
 	for i = 1, #data do
-		local c = string.sub(data, i, i)
-		local newKey = key .. c
+		local c = string.byte(data, i, i)
 
-		if dictionary[newKey] then
-			key = newKey
-			goto continue -- newKey isn't the longest in the dictionary yet; keep searching
+		if key == nil then
+			key = c
+			goto continue
+		end
+
+		local nextKey = trieNexts[key][c]
+		if nextKey ~= nil then
+			key = nextKey
+			goto continue -- key isn't the longest in the dictionary yet; keep searching
 		end
 
 		-- Emit key code
-		local code = dictionary[key]
+		local code = trieCodes[key]
 		outBuffer = bit32.lshift(outBuffer, curWidth) + code
 		outBufferLen = outBufferLen + curWidth
-		key = c -- We emitted key, so key (newKey) becomes just c
 
 		-- Write from out buffer
 		while outBufferLen >= 6 do
@@ -80,19 +71,24 @@ local function compress(data)
 			outArrNext = outArrNext + 1
 		end
 
-		-- Put new key into the dictionary, changing width if necessary
-		dictionary[newKey] = nextEntry
+		-- Insert an entry for `key .. c` into the dictionary with code `nextEntry` and change width if necessary
+		trieNexts[key][c] = nextEntry
+		trieCodes[nextEntry] = nextEntry
+		trieNexts[nextEntry] = {}
 		nextEntry = nextEntry + 1
 		if nextEntry >= nextWidthChangeAt then
 			nextWidthChangeAt = nextWidthChangeAt * 2
 			curWidth = curWidth + 1
 		end
 
+		-- We emitted `key`'s code', but `key` doesn't contain `c`; `c` is left over and becomes the new `key`
+		key = c
+
 		::continue::
 	end
 
-	-- Emit code for the remainder (guaranteed to exist)
-	local code = dictionary[key]
+	-- Emit code for the remainder (guaranteed to exist in the dictionary already)
+	local code = trieCodes[key]
 	outBuffer = bit32.lshift(outBuffer, curWidth) + code
 	outBufferLen = outBufferLen + curWidth
 
@@ -129,8 +125,11 @@ end
 local function decompress(data)
 	assert(type(data) == "string", "bad argument #1 to 'decompress' (string expected, got " .. type(data) .. ")")
 
-	local dictionary = table_copy(initialDictionary)
-	local nextEntry = initialDictionarySize
+	local dictionary = {}
+	for i = 0, INITIAL_DICT_SIZE - 1 do
+		dictionary[i] = string.char(i)
+	end
+	local nextEntry = INITIAL_DICT_SIZE
 
 	local previousEmitted = nil
 

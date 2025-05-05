@@ -5,7 +5,6 @@ local ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789
 local PADDING = "="
 local PADDING_BYTE = string.byte(PADDING)
 
--- Lookup tables
 local lookupB64Char = {}
 local lookupB64Code = {}
 
@@ -117,6 +116,7 @@ local function compress(data)
 	return table.concat(outArr)
 end
 
+
 --[[
 	Decompress the given base64 string and return the original string of binary
 	data. Does not check the validity of the input; call via a pcall for inputs
@@ -125,9 +125,14 @@ end
 local function decompress(data)
 	assert(type(data) == "string", "bad argument #1 to 'decompress' (string expected, got " .. type(data) .. ")")
 
-	local dictionary = {}
+	local trieChars = {}
+	local triePrevs = {}
+	local trieLens = {}
+
 	for i = 0, INITIAL_DICT_SIZE - 1 do
-		dictionary[i] = string.char(i)
+		trieChars[i] = string.char(i)
+		triePrevs[i] = nil
+		trieLens[i] = 0
 	end
 	local nextEntry = INITIAL_DICT_SIZE
 
@@ -157,30 +162,41 @@ local function decompress(data)
 		local code = bit32.extract(outBuffer, outBufferLen - curWidth, curWidth)
 		outBufferLen = outBufferLen - curWidth
 
-		local key = dictionary[code] -- The key to add to the dictionary, or nil
-		local toEmit = nil
-		if key then
-			toEmit = key
-			key = previousEmitted and (previousEmitted .. string.sub(key, 1, 1)) or nil
-		else
-			key = previousEmitted .. string.sub(previousEmitted, 1, 1)
-			toEmit = key
+		local codeIsInDictionary = (trieChars[code] ~= nil)
+		local toEmit = codeIsInDictionary and code or previousEmitted
+
+		-- Emit toEmit and find its first character
+		local lenToEmit = trieLens[toEmit]
+		local emitting = toEmit
+
+		for emitOffset = lenToEmit, 0, -1 do
+			outArr[outArrNext + emitOffset] = trieChars[emitting]
+			emitting = triePrevs[emitting]
 		end
 
-		-- Emit string
-		outArr[outArrNext] = toEmit
-		outArrNext = outArrNext + 1
-		previousEmitted = toEmit
+		local firstChar = outArr[outArrNext]
+		outArrNext = outArrNext + lenToEmit + 1
 
-		-- Add to dictionary, changing width if necessary
-		if key then
-			dictionary[nextEntry] = key
+		-- Add `previousEmitted .. firstChar` to the dictionary
+		if previousEmitted ~= nil then
+			trieChars[nextEntry] = firstChar
+			triePrevs[nextEntry] = previousEmitted
+			trieLens[nextEntry] = trieLens[previousEmitted] + 1
+
 			nextEntry = nextEntry + 1
 			if nextEntry >= nextWidthChangeAt - 1 then -- We have to change width one entry before the encoder
 				nextWidthChangeAt = nextWidthChangeAt * 2
 				curWidth = curWidth + 1
 			end
 		end
+
+		if not codeIsInDictionary then
+			-- If `code` was not in the dict, we actually wanted to emit `previousEmitted .. firstChar`
+			outArr[outArrNext] = firstChar
+			outArrNext = outArrNext + 1
+		end
+
+		previousEmitted = codeIsInDictionary and toEmit or (nextEntry - 1)
 
 	    ::continue::
 	end
@@ -190,6 +206,7 @@ local function decompress(data)
 
 	return table.concat(outArr)
 end
+
 
 return {
 	compress = compress,

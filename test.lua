@@ -1,4 +1,4 @@
-local llzw = require("llzw")
+local llzw = require("./llzw")
 
 local function checkIsBase64(str)
 	assert(#str % 4 == 0, "base64 is not padded")

@@ -1,4 +1,31 @@
-local bit32 = bit32 or require("bit32")
+local bit32_lshift, bit32_extract do
+	local ok, customBit32 = pcall(require, "bit32")
+	local bit32 = bit32 or (ok and customBit32 or nil)
+
+	local ok, customBit = pcall(require, "bit")
+	local bit = bit or (ok and customBit or nil)
+
+	if bit32 then
+		bit32_lshift, bit32_extract = bit32.lshift, bit32.extract
+	elseif bit then
+		local mask = bit.bnot(0) -- Always 32 bits on LuaJIT
+		bit32_lshift = bit.lshift
+		bit32_extract = function(x, field, width)
+			return bit.band(
+				bit.rshift(x, field),
+				bit.rshift(mask, 32 - width)
+			)
+		end
+	else
+		bit32_lshift = assert(load("return function(x, n) return x << n end"))()
+		bit32_extract = assert(load([[
+			local mask = ~(~0 << 32)
+			return function(x, field, width)
+				return (x >> field) & (mask >> (32 - width))
+			end
+		]]))()
+	end
+end
 
 local INITIAL_DICT_SIZE = 256
 local ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
@@ -58,12 +85,12 @@ local function compress(data)
 
 		-- Emit key code
 		local code = trieCodes[key]
-		outBuffer = bit32.lshift(outBuffer, curWidth) + code
+		outBuffer = bit32_lshift(outBuffer, curWidth) + code
 		outBufferLen = outBufferLen + curWidth
 
 		-- Write from out buffer
 		while outBufferLen >= 6 do
-			local b64Code = bit32.extract(outBuffer, outBufferLen - 6, 6)
+			local b64Code = bit32_extract(outBuffer, outBufferLen - 6, 6)
 			outBufferLen = outBufferLen - 6
 
 			outArr[outArrNext] = lookupB64Char[b64Code]
@@ -88,19 +115,19 @@ local function compress(data)
 
 	-- Emit code for the remainder (guaranteed to exist in the dictionary already)
 	local code = trieCodes[key]
-	outBuffer = bit32.lshift(outBuffer, curWidth) + code
+	outBuffer = bit32_lshift(outBuffer, curWidth) + code
 	outBufferLen = outBufferLen + curWidth
 
 	-- Ensure outBuffer contains a whole number of sextets
 	local rem = outBufferLen % 6
 	if rem ~= 0 then
-		outBuffer = bit32.lshift(outBuffer, 6 - rem)
+		outBuffer = bit32_lshift(outBuffer, 6 - rem)
 		outBufferLen = outBufferLen + 6 - rem
 	end
 
 	-- Write out the rest of the output buffer
 	while outBufferLen >= 6 do
-		local b64Code = bit32.extract(outBuffer, outBufferLen - 6, 6)
+		local b64Code = bit32_extract(outBuffer, outBufferLen - 6, 6)
 		outBufferLen = outBufferLen - 6
 
 		outArr[outArrNext] = lookupB64Char[b64Code]
@@ -151,7 +178,7 @@ local function decompress(data)
 			break -- If we reach padding, we've read everything
 		end
 
-		outBuffer = bit32.lshift(outBuffer, 6) + lookupB64Code[cByte]
+		outBuffer = bit32_lshift(outBuffer, 6) + lookupB64Code[cByte]
 		outBufferLen = outBufferLen + 6
 
 		if outBufferLen < curWidth then
@@ -159,7 +186,7 @@ local function decompress(data)
 		end
 
 		-- Read next code
-		local code = bit32.extract(outBuffer, outBufferLen - curWidth, curWidth)
+		local code = bit32_extract(outBuffer, outBufferLen - curWidth, curWidth)
 		outBufferLen = outBufferLen - curWidth
 
 		local codeIsInDictionary = (trieChars[code] ~= nil)
@@ -202,7 +229,7 @@ local function decompress(data)
 	end
 
 	-- If there is anything non-zero left in the buffer, the string was malformed
-	-- assert(bit32.extract(outBuffer, 0, outBufferLen) == 0, "buffer was not empty")
+	-- assert(bit32_extract(outBuffer, 0, outBufferLen) == 0, "buffer was not empty")
 
 	return table.concat(outArr)
 end

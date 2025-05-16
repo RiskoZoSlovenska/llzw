@@ -27,10 +27,12 @@ local bit32_lshift, bit32_extract do
 	end
 end
 
+local string_byte = string.byte
+
 local INITIAL_DICT_SIZE = 256
 local ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 local PADDING = "="
-local PADDING_BYTE = string.byte(PADDING)
+local PADDING_BYTE = string_byte(PADDING)
 
 local lookupB64Char = {}
 local lookupB64Code = {}
@@ -39,7 +41,7 @@ for i = 1, 64 do
 	local c = string.sub(ALPHABET, i, i)
 
 	lookupB64Char[i - 1] = c
-	lookupB64Code[string.byte(c)] = i - 1
+	lookupB64Code[string_byte(c)] = i - 1
 end
 
 
@@ -70,7 +72,7 @@ local function compress(data)
 	local outArr, outArrNext = {}, 1
 
 	for i = 1, #data do
-		local c = string.byte(data, i, i)
+		local c = string_byte(data, i, i)
 
 		if key == nil then
 			key = c
@@ -173,7 +175,7 @@ local function decompress(data)
 
 	for i = 1, #data do
 		-- Read and decode the next sextet
-		local cByte = string.byte(data, i)
+		local cByte = string_byte(data, i)
 		if cByte == PADDING_BYTE then
 			break -- If we reach padding, we've read everything
 		end

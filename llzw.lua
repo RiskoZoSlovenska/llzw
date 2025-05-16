@@ -1,31 +1,4 @@
-local bit32_lshift, bit32_extract do
-	local ok, customBit32 = pcall(require, "bit32")
-	local bit32 = bit32 or (ok and customBit32 or nil)
-
-	local ok, customBit = pcall(require, "bit")
-	local bit = bit or (ok and customBit or nil)
-
-	if bit32 then
-		bit32_lshift, bit32_extract = bit32.lshift, bit32.extract
-	elseif bit then
-		local mask = bit.bnot(0) -- Always 32 bits on LuaJIT
-		bit32_lshift = bit.lshift
-		bit32_extract = function(x, field, width)
-			return bit.band(
-				bit.rshift(x, field),
-				bit.rshift(mask, 32 - width)
-			)
-		end
-	else
-		bit32_lshift = assert(load("return function(x, n) return x << n end"))()
-		bit32_extract = assert(load([[
-			local mask = ~(~0 << 32)
-			return function(x, field, width)
-				return (x >> field) & (mask >> (32 - width))
-			end
-		]]))()
-	end
-end
+local bit32_lshift, bit32_extract = bit32.lshift, bit32.extract
 
 local string_byte = string.byte
 
@@ -76,13 +49,13 @@ local function compress(data)
 
 		if key == nil then
 			key = c
-			goto continue
+			continue
 		end
 
 		local nextKey = trieNexts[key][c]
 		if nextKey ~= nil then
 			key = nextKey
-			goto continue -- key isn't the longest in the dictionary yet; keep searching
+			continue -- key isn't the longest in the dictionary yet; keep searching
 		end
 
 		-- Emit key code
@@ -111,8 +84,6 @@ local function compress(data)
 
 		-- We emitted `key`'s code', but `key` doesn't contain `c`; `c` is left over and becomes the new `key`
 		key = c
-
-		::continue::
 	end
 
 	-- Emit code for the remainder (guaranteed to exist in the dictionary already)
@@ -184,7 +155,7 @@ local function decompress(data)
 		outBufferLen = outBufferLen + 6
 
 		if outBufferLen < curWidth then
-			goto continue -- We haven't decoded enough characters to get the next code
+			continue -- We haven't decoded enough characters to get the next code
 		end
 
 		-- Read next code
@@ -226,8 +197,6 @@ local function decompress(data)
 		end
 
 		previousEmitted = codeIsInDictionary and toEmit or (nextEntry - 1)
-
-	    ::continue::
 	end
 
 	-- If there is anything non-zero left in the buffer, the string was malformed

@@ -1,8 +1,8 @@
 # llzw - Fast LZW + base64 in pure Lua
 
-`llzw` is a simple, small, relatively fast library that does [LZW compression/decompression](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Welch) and [base64 encode/decode](https://en.wikipedia.org/wiki/Base64) in one step. It was originally created for compressing a couple-MiB JSON table into a fully printable string that could then be copied by the user or sent to a pastebin service.
+This is the Luau branch of `llzw`.
 
-Requires Lua 5.2+ or LuaJIT. See the [luau](../../tree/luau) branch for a Luau version.
+`llzw` is a simple, small, relatively fast library that does [LZW compression/decompression](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Welch) and [base64 encode/decode](https://en.wikipedia.org/wiki/Base64) in one step. It was originally created for compressing a couple-MiB JSON table into a fully printable string that could then be copied by the user or sent to a pastebin service.
 
 The LZW implementation here uses variable-width codes, has no limit on the size of the dictionary, and does not perform any sort of optimization for uncompressible data. This may cause problems when de/compressing very large strings, but `llzw` probably isn't the right tool for that anyway.
 

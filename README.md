@@ -9,6 +9,12 @@ The LZW implementation here uses variable-width codes, has no limit on the size 
 
 ## Usage
 
+`llzw` can be installed from [LuaRocks](https://luarocks.org):
+```
+luarocks install llzw
+```
+
+Then:
 ```lua
 local llzw = require("llzw")
 
